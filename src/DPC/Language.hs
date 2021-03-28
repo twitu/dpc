@@ -6,12 +6,12 @@
 module DPC.Language where
 
 import           Data.Foldable
-import           Data.Maybe    (isJust)
-import           Data.Map as Map
+import           Data.Maybe                     ( isJust )
+import           Data.Map                      as Map
 import           Control.Monad.State
 
-import DPC.Types
-import DPC.Specifications
+import           DPC.Types
+import           DPC.Specifications
 
 --
 -- Language primitives
@@ -41,7 +41,8 @@ class Monad m => SharedMemory m where
 -- Implementation Utilities
 --
 isReceivable :: Message -> [(Label, String)] -> Bool
-isReceivable Message{..} = isJust . find (\(lbl,t) -> _msgLabel == lbl && _msgTag == t)
+isReceivable Message {..} =
+  isJust . find (\(lbl, t) -> _msgLabel == lbl && _msgTag == t)
 
 -- Instances -- Potentially speculative instances for "the classics"
 instance MessagePassing m => MessagePassing (StateT s m) where
@@ -57,40 +58,45 @@ instance ProtletAnnotations a m => ProtletAnnotations a (StateT s m) where
 --
 spinReceive :: MessagePassing m => [(Label, String)] -> m Message
 spinReceive candidates = do
-    mmsg <- receive candidates
-    case mmsg of
-      Nothing  -> spinReceive candidates
-      Just msg -> return msg
+  mmsg <- receive candidates
+  case mmsg of
+    Nothing  -> spinReceive candidates
+    Just msg -> return msg
 
-rpcCall :: MessagePassing m =>
-  Label -> String -> [Int] -> NodeID -> m [Int]
+rpcCall :: MessagePassing m => Label -> String -> [Int] -> NodeID -> m [Int]
 rpcCall label protlet body to = do
   send to label (protlet ++ "__Request") body
-  Message{..} <- spinReceive [(label, protlet ++ "__Response")]
+  Message {..} <- spinReceive [(label, protlet ++ "__Response")]
   return _msgBody
 
-broadcastQuorom :: (MessagePassing m) =>
-  Rational -> Label -> String -> [Int] -> [NodeID] -> m [Message]
+broadcastQuorom
+  :: (MessagePassing m)
+  => Rational
+  -> Label
+  -> String
+  -> [Int]
+  -> [NodeID]
+  -> m [Message]
 broadcastQuorom responsesNeeded label protlet body receivers = do
   traverse_ (\to -> send to label (protlet ++ "__Broadcast") body) receivers
   spinForResponses []
-  where
-    spinForResponses resps
-      | fromIntegral (length resps) >= responsesNeeded =
-          return resps
-      | otherwise = do
-          resp <- spinReceive [(label, protlet ++ "__Response")]
-          spinForResponses (resp:resps)
+ where
+  spinForResponses resps
+    | fromIntegral (length resps) >= responsesNeeded = return resps
+    | otherwise = do
+      resp <- spinReceive [(label, protlet ++ "__Response")]
+      spinForResponses (resp : resps)
 
-broadcast :: (MessagePassing m) =>
-  Label -> String -> [Int] -> [NodeID] -> m [Message]
-broadcast label protlet body receivers = 
+broadcast
+  :: (MessagePassing m) => Label -> String -> [Int] -> [NodeID] -> m [Message]
+broadcast label protlet body receivers =
   broadcastQuorom (fromIntegral $ length receivers) label protlet body receivers
 
 ---
 -- Network description
 --
 
+-- Network state is a list of messages and a monadic type representing a node
 type ImplNetwork m a = NetworkState [Message] (m a)
 
 initializeImplNetwork :: [(NodeID, m a)] -> ImplNetwork m a
